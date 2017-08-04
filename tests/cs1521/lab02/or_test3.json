@@ -1,5 +1,5 @@
 {  
-    "name":"OR test 1",
+    "name":"OR test 3",
     "description":"0x8000000000000001 | 0x8000000000000001",
     "binary":"bitops",
     "input":[  
