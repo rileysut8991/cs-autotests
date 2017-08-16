@@ -11,13 +11,16 @@ import json
 import os
 import subprocess
 
-
 # base directory which contains all the test files
 BASE_DIR = os.path.expanduser('~z5164705/public_html/tests/')
-# a list of valid prefixes for class names
-valid_prefixes = ['cs']
 # colour functions for printing text to console. Example usage print(colours['red']('...'))
 colours = {'red': lambda s : '\x1b[0;31m{}\x1b[0m'.format(s), 'green': lambda s : '\x1b[0;32m{}\x1b[0m'.format(s)}
+
+def dir_name(pathstring):
+    """Returns the directory name from a directory path:
+    e.g. last_directory('/a/b/c/') = 'c'
+    """
+    return os.path.basename(os.path.normpath(pathstring))
 
 def diff(actual, expected):
     """Returns a diff string if the two string were different which is already colourised.
@@ -65,6 +68,7 @@ class Test:
             expected - the expected output of this test.
             diff - an empty string if the test passed or has not been run, otherwise
                     a colourised diff between the expected and actual output.
+            authors - a list of authors who contributed the test
     """
     def __init__(self, test_file, working_directory):
         def get_optional(data, key, default=None):  # helper method
@@ -76,50 +80,52 @@ class Test:
             self.description = get_optional(data, 'description', 'no description')
             self.exercise = get_optional(data, 'exercise', data['binary'])
             self.challenge = get_optional(data, 'challenge', False)
-            self.time_limit = get_optional(data, 'time_limit')
+            self.time_limit = get_optional(data, 'time_limit', 60)
             self.binary = working_directory + '/' + data['binary']
             self.args = [str(arg) for arg in get_optional(data, 'args', [])]
             self.input = [line + '\n' for line in data['input']]
             self.expected = ''.join([line + '\n' for line in data['expected']])
             self.diff = ''
+            self.authors = get_optional(data, 'authors', ['no author'])
         if not os.path.isfile(self.binary):
-            print('You are missing the required file {}'.format(data['binary']))
+            print('You are missing the required file: {}'.format(data['binary']))
             print('Have you compiled your code?')
             exit()
 
     def run(self):
+        """Runs the autotest. Diff will be stored in self.diff"""
         process = subprocess.Popen([self.binary] + self.args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         
         for line in self.input:
             process.stdin.write(line.encode())
         try:
-            out, err = process.communicate(timeout=self.time_limit)
+            out, err = process.communicate(timeout=self.time_limit)  # TODO test timeout
             if err:
                 self.diff = """Encountered error running test:
                 Output: {}
                 Error output: {}
                 """.format(out.decode(), err.decode())
             else:
-                self.diff = diff(out.decode(), self.expected)
+                self.diff = diff(out.decode(), self.expected)  # TODO make sure I didn't break diff
         except subprocess.TimeoutExpired:
             self.diff = colours['red']('Time limit exceeded.')
     
     def show_diff(self):
-        print()
-        print(self.diff)
+        """Shows the diff if there is one."""
+        if diff:
+            print()
+            print(self.diff)
     
 def validate_args(args):
     """Makes sure the passed in arguments are a-ok!"""
     if not os.path.isdir(BASE_DIR + args.cls):
         print('{} is not a recognised class'.format(args.cls))
-        if len(args.cls) > 2 and args.cls[0:2] not in valid_prefixes:
-            print('Valid class prefixes: {}'.format(valid_prefixes))
+        print('Valid classes: {}'.format([dir_name(x) for x in glob.glob(BASE_DIR + '*/')]))
         exit()
     if not os.path.isdir(BASE_DIR + args.cls + '/' + args.lab):
         print('{} is not a valid lab number.'.format(args.lab))
-        print('Example usage: autotest.py cs1000 lab02 [...]')
+        print('Valid labs: {}'.format([dir_name(x) for x in glob.glob(BASE_DIR + '/' + args.cls + '/*/')]))
         exit()
-        
         
 def load_tests(directory, exercise='', test_name='', challenge=False):
     """Loads all json test files from the given directory.
@@ -139,7 +145,7 @@ def load_tests(directory, exercise='', test_name='', challenge=False):
             continue
         else:
             tests.append(test)
-    if not tests:
+    if not tests and (exercise or test_name):
         print('No tests matched the given conditions. Use -l to list all available exercises.')
         exit()
     return tests
@@ -152,12 +158,13 @@ def run_tests(tests):
         if test.diff:
             print(colours['red']('Failed'))
             test.show_diff()
+            failed_tests.append(test.name)
         else:
             print(colours['green']('Passed'))
     
     print('Passed {}/{} tests.'.format(len(tests) - len(failed_tests), len(tests)))
     if failed_tests:
-        print(colours['red']('Tests failed {}'.format(str(failed_tests)[1:-1])))
+        print(colours['red']('Tests failed {}'.format(failed_tests)))
     else:
         print(colours['green']('You passed all the tests! You are awesome! :)'))
         
